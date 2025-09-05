@@ -1,11 +1,12 @@
-import os
 import json
 import requests
 import yfinance as yf
+import logging
 from datetime import datetime
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Bot token and chat id set directly for immediate use
+TELEGRAM_BOT_TOKEN = "8451443697:AAEERRtPfdx26XPuW_9pFG5QgfdMmPgVIYA"
+TELEGRAM_CHAT_ID = "8451443697"
 PORTFOLIO_FILE = "portfolio.json"
 
 def fetch_stock_price(symbol):
@@ -20,7 +21,8 @@ def fetch_stock_price(symbol):
             last_close = float(data['Close'][-1])
             return last_close, None
         return None, None
-    except:
+    except Exception as e:
+        logging.error(f"Error fetching price for {symbol}: {e}")
         return None, None
 
 def fetch_nifty_index():
@@ -34,7 +36,8 @@ def fetch_nifty_index():
             pct = (change / prev * 100) if prev else 0
             return last, change, pct
         return None, None, None
-    except:
+    except Exception as e:
+        logging.error(f"Error fetching Nifty index: {e}")
         return None, None, None
 
 def compute_message(portfolio):
@@ -52,7 +55,7 @@ def compute_message(portfolio):
     gainer = None
     loser = None
 
-    for s in portfolio["stocks"]:
+    for s in portfolio.get("stocks", []):
         sym, qty, avg = s["symbol"], s["qty"], s["avg_price"]
         price, prev = fetch_stock_price(sym)
         if price is None:
@@ -87,14 +90,33 @@ def compute_message(portfolio):
     return "\n".join(lines)
 
 def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text})
+    if not TELEGRAM_CHAT_ID:
+        logging.error("TELEGRAM_CHAT_ID is not set.")
+        print("TELEGRAM_CHAT_ID is not set.")
+        return
 
-def main():
-    with open(PORTFOLIO_FILE, "r") as f:
-        portfolio = json.load(f)
-    message = compute_message(portfolio)
-    send_telegram_message(message)
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        resp = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=10)
+        resp.raise_for_status()
+        result = resp.json()
+        if not result.get("ok"):
+            logging.error(f"Telegram API error: {result}")
+            print(f"Telegram API error: {result}")
+        else:
+            logging.info("Message sent successfully to Telegram.")
+            print("Message sent successfully to Telegram.")
+    except Exception as e:
+        logging.error(f"Failed to send Telegram message: {e}")
+        print(f"Failed to send Telegram message: {e}")
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)
+    try:
+        with open(PORTFOLIO_FILE, "r") as f:
+            portfolio = json.load(f)
+        message = compute_message(portfolio)
+        send_telegram_message(message)
+    except Exception as e:
+        logging.error(f"Error running portfolio agent: {e}")
+        print(f"Error running portfolio agent: {e}")
